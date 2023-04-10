@@ -2,7 +2,7 @@
 #include <memory>
 
 #include "betterbackend/include/Octree.h"
-#include "betterbackend/src/main.rs.h"
+#include "betterbackend/src/bind.rs.h"
 #include "rust/cxx.h"
 
 using namespace open3d::geometry;

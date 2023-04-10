@@ -5,47 +5,21 @@ use actix_web::{
 };
 use actix_web::error::ErrorInternalServerError;
 
-use cxx::CxxString;
 
+use serde::{Serialize, Deserialize};
+
+mod bind;
 mod data_cache;
 mod load_numpy;
 
-#[cxx::bridge]
-mod ffi {
-
-    struct RustVec3 {
-        x: f64,
-        y: f64,
-        z: f64,
-    }
-
-    struct Viewbox {
-        box_min: RustVec3,
-        box_max: RustVec3,
-    }
-
-    #[namespace="open3d::geometry"]
-    unsafe extern "C++" {
-        include!("betterbackend/include/Octree.h");
-
-        type Octree;
-    }
-
-    unsafe extern "C++" {
-        include!("betterbackend/include/rust_octree_bind.h");
-
-        fn load_octree_from_file(file_name: String) -> SharedPtr<Octree>;
-        fn get_intersecting_node(octree: SharedPtr<Octree>, viewbox: Viewbox) -> Vec<f64>;
-    }
+#[derive(Serialize, Deserialize)]
+struct WebServiceConfig {
+    basedir: String
 }
 
-
-impl ffi::RustVec3 {
-    fn new(x: f64, y: f64, z: f64) -> Self {
-        ffi::RustVec3{ x, y, z }
-    }
+impl ::std::default::Default for WebServiceConfig {
+    fn default() -> Self { Self { basedir: "~/Documents/data/tng/manual_download/".to_string() } }
 }
-
 
 async fn get_rand_init(
     cache: web::Data<Addr<data_cache::DataCache>>,
@@ -61,14 +35,17 @@ async fn get_rand_init(
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
-    let cache = data_cache::DataCache::new().start();
+
+    let cfg: WebServiceConfig = confy::load_path("cfg.yml").expect("Failed to load config from disk");
+
+    let cache = data_cache::DataCache::new(cfg.basedir).start();
     let file_name = "cpp/octree.json";
 
     log::info!("Loading octree");
 
-    let octree = ffi::load_octree_from_file(file_name.to_string());
-    let viewbox = ffi::Viewbox { box_min: ffi::RustVec3::new(2001.0, 2000.0, 2000.0), box_max: ffi::RustVec3::new(2504.0, 2500.0, 2506.0) };
-    let values = ffi::get_intersecting_node(octree, viewbox);
+    let octree = bind::ffi::load_octree_from_file(file_name.to_string());
+    let viewbox = bind::ffi::Viewbox { box_min: bind::ffi::RustVec3::new(2001.0, 2000.0, 2000.0), box_max: bind::ffi::RustVec3::new(2504.0, 2500.0, 2506.0) };
+    let values = bind::ffi::get_intersecting_node(octree, viewbox);
     for value in values {
         println!("{}", value);
     }
