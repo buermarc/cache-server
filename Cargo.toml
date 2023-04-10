@@ -2,6 +2,7 @@
 name = "betterbackend"
 version = "0.1.0"
 edition = "2021"
+links = "jsoncpp"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,3 +21,8 @@ serde_json = "1"
 npy = "0.4.0"
 ndarray-npy = "0.8.1"
 ndarray = "0.15.6"
+
+cxx = "1.0"
+
+[build-dependencies]
+cxx-build = "1.0"
