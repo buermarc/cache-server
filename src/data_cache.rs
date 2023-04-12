@@ -52,14 +52,21 @@ impl DataCache {
     }
 
     pub fn load_entry(&mut self, request: CacheRequest) -> Arc<CacheEntry> {
-        let basedir = &self.basedir;
-        let particle_list_of_leafs =
-            read_npy(basedir.clone() + "particle_list_of_leafs.npy").unwrap();
+        let basedir = self.basedir.clone()
+            + "/"
+            + &request.simulation
+            + "/"
+            + &format!("snapdir_{:03}", request.snapshot_id);
+
+        let particle_list_of_leafs = read_npy(basedir.clone() + "particle_list_of_leafs.npy")
+            .expect("Failed to open {}particle_list_of_leafs");
         let particle_list_of_leafs_scan =
-            read_npy(basedir.clone() + "particle_list_of_leafs_scan.npy").unwrap();
-        let splines = read_npy(basedir.clone() + "splines.npy").unwrap();
-        let densities = read_npy(basedir.clone() + "Density.npy").unwrap();
-        let coordinates = read_npy(basedir.clone() + "Coordinates.npy").unwrap();
+            read_npy(basedir.clone() + "particle_list_of_leafs_scan.npy")
+                .expect("Failed to open particle_list_of_leafs_scan");
+        let splines = read_npy(basedir.clone() + "splines.npy").expect("Failed to open splines");
+        let densities = read_npy(basedir.clone() + "Density.npy").expect("Failed to open Density");
+        let coordinates =
+            read_npy(basedir.clone() + "Coordinates.npy").expect("Failed to open Coordinates");
 
         let octree = load_octree_from_file(basedir.clone() + "o3dOctree.json");
 
