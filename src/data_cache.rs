@@ -5,19 +5,18 @@ use std::sync::Arc;
 
 use cxx::SharedPtr;
 
-use ndarray::{Array, Array1, Array2, Array3, Axis};
+use ndarray::{Array1, Array2, Array3};
 use ndarray_npy::read_npy;
-use ndarray_stats::{QuantileExt, interpolate::Nearest};
 
 use super::bind::ffi::{load_octree_from_file, Octree};
-
-use ordered_float::OrderedFloat;
-
-use noisy_float::types::{n64, N64};
 
 #[derive(Message)]
 #[rtype(result = "isize")]
 pub struct RandU;
+
+#[derive(Message)]
+#[rtype(result = "String")]
+pub struct BaseDirRequest;
 
 #[derive(Message)]
 #[rtype(result = "Arc<CacheEntry>")]
@@ -65,25 +64,20 @@ impl DataCache {
             + &format!("snapdir_{:03}", request.snapshot_id)
             + "/";
 
-        println!("Basedir: {}", basedir);
         let particle_list_of_leafs = read_npy(basedir.clone() + "particle_list_of_leafs.npy")
             .expect("Failed to open particle_list_of_leafs");
         let particle_list_of_leafs_scan =
             read_npy(basedir.clone() + "particle_list_of_leafs_scan.npy")
                 .expect("Failed to open particle_list_of_leafs_scan");
         let splines = read_npy(basedir.clone() + "splines.npy").expect("Failed to open splines");
-        let densities: Array2<f64> = read_npy(basedir.clone() + "Density.npy").expect("Failed to open Density");
+        let densities: Array2<f64> =
+            read_npy(basedir.clone() + "Density.npy").expect("Failed to open Density");
+        let quantiles: Array1<f64> = read_npy(basedir.clone() + "densities_quantiles.npy")
+            .expect("Failed to open density_quantiles");
         let coordinates =
             read_npy(basedir.clone() + "Coordinates.npy").expect("Failed to open Coordinates");
 
         let octree = load_octree_from_file(basedir.clone() + "o3dOctree.json");
-
-        let lin: Array1<N64> = Array::linspace(0., 1., 100).map(|x| n64(*x));
-        let ordered: Array2<OrderedFloat<f64>> = densities.map(|x| OrderedFloat(*x));
-        let quantiles = {
-            let mut flat_densities = Array::from_iter(ordered.iter());
-            flat_densities.quantiles_axis_mut(Axis(0), &lin, &Nearest).expect("Failed to calc quantiles.").map(|x| x.into_inner())
-        };
 
         let entry = Arc::new(CacheEntry {
             particle_list_of_leafs,
@@ -109,6 +103,14 @@ impl Handler<RandU> for DataCache {
 
     fn handle(&mut self, _msg: RandU, _ctx: &mut Context<Self>) -> Self::Result {
         self.rand
+    }
+}
+
+impl Handler<BaseDirRequest> for DataCache {
+    type Result = String;
+
+    fn handle(&mut self, _msg: BaseDirRequest, _ctx: &mut Context<Self>) -> Self::Result {
+        self.basedir.clone()
     }
 }
 
