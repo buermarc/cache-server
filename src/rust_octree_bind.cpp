@@ -3,6 +3,7 @@
 #include "betterbackend/include/Octree.h"
 #include "betterbackend/include/rust_octree_bind.h"
 #include <algorithm>
+#include <iostream>
 
 #include "rust/cxx.h"
 
@@ -28,9 +29,9 @@ std::shared_ptr<open3d::geometry::Octree> load_octree_from_file(rust::String fil
     return octree_ptr;
 }
 
-rust::Vec<double> get_intersecting_node(std::shared_ptr<open3d::geometry::Octree> octree, Viewbox viewbox) {
+rust::Vec<int64_t> get_intersecting_node(std::shared_ptr<open3d::geometry::Octree> octree, Viewbox viewbox) {
     
-    rust::Vec<double> particle_arr_ids;
+    rust::Vec<int64_t> particle_arr_ids;
         
     auto traverse_lambda = [&](const std::shared_ptr<open3d::geometry::OctreeNode> &node, const std::shared_ptr<open3d::geometry::OctreeNodeInfo> &node_info) {
         if (!_box_intersect((*node_info).origin_, (*node_info).origin_.array()+(*node_info).size_, viewbox.box_min, viewbox.box_max))
@@ -39,7 +40,7 @@ rust::Vec<double> get_intersecting_node(std::shared_ptr<open3d::geometry::Octree
         if (IsType<open3d::geometry::OctreePointColorLeafNode>(&(*node))) {
 
             auto cast_node = dynamic_cast<open3d::geometry::OctreePointColorLeafNode*>(&(*node));
-            particle_arr_ids.push_back((*cast_node).indices_[0]);
+            particle_arr_ids.push_back((int64_t)(*cast_node).indices_[0]);
             return true;
         }
 

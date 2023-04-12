@@ -1,34 +1,79 @@
-use std::time::Duration;
 use actix::*;
-use actix_web::{
-    middleware::Logger, web, App, HttpServer, Error, rt::time::{sleep_until, Instant}
-};
 use actix_web::error::ErrorInternalServerError;
+use actix_web::{
+    middleware::Logger,
+    rt::time::{sleep_until, Instant},
+    web, App, Error, HttpServer, Responder,
+};
+use std::time::Duration;
 
+use expanduser::expanduser;
+use std::collections::HashMap;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 mod bind;
 mod data_cache;
-mod load_numpy;
+mod lod;
 
 #[derive(Serialize, Deserialize)]
 struct WebServiceConfig {
-    basedir: String
+    basedir: String,
+}
+
+#[derive(Deserialize)]
+struct ClientState {
+    level_of_detail: HashMap<i64, i64>,
+    batch_size_lod: i64,
+    camera_info: lod::CameraInfo,
 }
 
 impl ::std::default::Default for WebServiceConfig {
-    fn default() -> Self { Self { basedir: "~/Documents/data/tng/manual_download/".to_string() } }
+    fn default() -> Self {
+        Self {
+            basedir: expanduser("~/Documents/data/tng/manual_download/")
+                .expect("Failed to expand user.")
+                .display()
+                .to_string(),
+        }
+    }
 }
 
-async fn get_rand_init(
-    cache: web::Data<Addr<data_cache::DataCache>>,
-) -> Result<String, Error> {
+async fn get_rand_init(cache: web::Data<Addr<data_cache::DataCache>>) -> Result<String, Error> {
     sleep_until(Instant::now() + Duration::from_secs(0)).await;
-    if let Ok(number) = cache.send(data_cache::RandU{}).await {
+    if let Ok(number) = cache.send(data_cache::RandU {}).await {
         Ok(number.to_string())
     } else {
         Err(ErrorInternalServerError("bad"))
+    }
+}
+
+async fn get_snapshot(
+    params: web::Path<(String, usize)>,
+    mut client_state: web::Json<ClientState>,
+    cache: web::Data<Addr<data_cache::DataCache>>,
+) -> Result<impl Responder, Error> {
+    let (simulation, snapshot_id) = (params.0.clone(), params.1);
+    let message = data_cache::CacheRequest {
+        simulation: simulation.to_string(),
+        snapshot_id,
+    };
+    if let Ok(cache_entry) = cache.send(message).await {
+        let cache_entry = &*cache_entry;
+        let lod_result = lod::calc_lod(
+            &cache_entry.particle_list_of_leafs,
+            &cache_entry.particle_list_of_leafs_scan,
+            &cache_entry.splines,
+            &cache_entry.densities,
+            &cache_entry.coordinates,
+            cache_entry.octree.clone(),
+            client_state.batch_size_lod,
+            &client_state.camera_info.clone(),
+            &mut client_state.level_of_detail,
+        );
+        Ok(web::Json(lod_result))
+    } else {
+        Err(ErrorInternalServerError("Something failed."))
     }
 }
 
@@ -36,31 +81,24 @@ async fn get_rand_init(
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
-    let cfg: WebServiceConfig = confy::load_path("cfg.yml").expect("Failed to load config from disk");
+    let cfg: WebServiceConfig =
+        confy::load_path("cfg.yml").expect("Failed to load config from disk");
 
     let cache = data_cache::DataCache::new(cfg.basedir).start();
-    let file_name = "cpp/octree.json";
 
-    log::info!("Loading octree");
-
-    let octree = bind::ffi::load_octree_from_file(file_name.to_string());
-    let viewbox = bind::ffi::Viewbox { box_min: bind::ffi::RustVec3::new(2001.0, 2000.0, 2000.0), box_max: bind::ffi::RustVec3::new(2504.0, 2500.0, 2506.0) };
-    let values = bind::ffi::get_intersecting_node(octree, viewbox);
-    for value in values {
-        println!("{}", value);
-    }
-
-    log::info!("Finished loading octree");
-
-    log::info!("starting HTTP server at http://localhost:8080");
+    log::info!("starting HTTP server at http://localhost:8000");
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(cache.clone()))
             .route("/rand", web::get().to(get_rand_init))
+            .route(
+                "/v1/get/splines/{simulation}/{snapshot_id}",
+                web::post().to(get_snapshot),
+            )
             .wrap(Logger::default())
     })
     .workers(2)
-    .bind(("127.0.0.1", 8080))?
+    .bind(("127.0.0.1", 8000))?
     .run()
     .await
 }

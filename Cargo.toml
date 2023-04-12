@@ -25,5 +25,7 @@ ndarray = "0.15.6"
 
 cxx = "1.0"
 
+expanduser = "1.2.2"
+
 [build-dependencies]
 cxx-build = "1.0"

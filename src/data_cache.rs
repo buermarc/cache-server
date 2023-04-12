@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use cxx::SharedPtr;
 
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, Array2, Array3};
 use ndarray_npy::read_npy;
 
-use super::bind::ffi::{Octree, load_octree_from_file};
+use super::bind::ffi::{load_octree_from_file, Octree};
 
 #[derive(Message)]
 #[rtype(result = "isize")]
@@ -17,8 +17,8 @@ pub struct RandU;
 #[derive(Message)]
 #[rtype(result = "Arc<CacheEntry>")]
 pub struct CacheRequest {
-    simulation: String,
-    snapshot_id: usize,
+    pub simulation: String,
+    pub snapshot_id: usize,
 }
 
 impl CacheRequest {
@@ -30,12 +30,11 @@ impl CacheRequest {
 pub struct CacheEntry {
     pub particle_list_of_leafs: Array1<i64>,
     pub particle_list_of_leafs_scan: Array1<i64>,
-    pub splines: Array2<i64>,
-    pub densities: Array2<i64>,
-    pub coordinates: Array2<i64>,
+    pub splines: Array3<f64>,
+    pub densities: Array2<f64>,
+    pub coordinates: Array2<f64>,
     pub octree: SharedPtr<Octree>,
 }
-
 
 pub struct DataCache {
     pub rand: isize,
@@ -45,18 +44,24 @@ pub struct DataCache {
 
 impl DataCache {
     pub fn new(basedir: String) -> Self {
-        DataCache { rand: random(), cache: HashMap::new(), basedir}
+        DataCache {
+            rand: random(),
+            cache: HashMap::new(),
+            basedir,
+        }
     }
 
     pub fn load_entry(&mut self, request: CacheRequest) -> Arc<CacheEntry> {
         let basedir = &self.basedir;
-        let particle_list_of_leafs = read_npy(basedir.clone() + "particle_list_of_leafs").unwrap();
-        let particle_list_of_leafs_scan = read_npy(basedir.clone() + "particle_list_of_leafs_scan").unwrap();
-        let splines = read_npy(basedir.clone() + "splines").unwrap();
-        let densities = read_npy(basedir.clone() + "densities").unwrap();
-        let coordinates = read_npy(basedir.clone() + "coordinates").unwrap();
+        let particle_list_of_leafs =
+            read_npy(basedir.clone() + "particle_list_of_leafs.npy").unwrap();
+        let particle_list_of_leafs_scan =
+            read_npy(basedir.clone() + "particle_list_of_leafs_scan.npy").unwrap();
+        let splines = read_npy(basedir.clone() + "splines.npy").unwrap();
+        let densities = read_npy(basedir.clone() + "Density.npy").unwrap();
+        let coordinates = read_npy(basedir.clone() + "Coordinates.npy").unwrap();
 
-        let octree = load_octree_from_file("o3dOctree.json".to_string());
+        let octree = load_octree_from_file(basedir.clone() + "o3dOctree.json");
 
         let entry = Arc::new(CacheEntry {
             particle_list_of_leafs,
@@ -89,12 +94,8 @@ impl Handler<CacheRequest> for DataCache {
 
     fn handle(&mut self, msg: CacheRequest, _ctx: &mut Context<Self>) -> Self::Result {
         match self.cache.get(&msg.as_id()) {
-            Some(entry) => {
-                entry.clone()
-            }
-            _ => {
-                self.load_entry(msg)
-            }
+            Some(entry) => entry.clone(),
+            _ => self.load_entry(msg),
         }
     }
 }

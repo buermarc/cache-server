@@ -1,5 +1,5 @@
 fn main() {
-    cxx_build::bridge("src/main.rs")
+    cxx_build::bridge("src/bind.rs")
         .file("src/rust_octree_bind.cpp")
         .file("src/Octree.cpp")
         .flag("-ljsoncpp")
