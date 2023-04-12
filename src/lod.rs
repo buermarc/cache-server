@@ -2,48 +2,10 @@ use ndarray::{s, Array1, Array2, Array3};
 use std::cmp::min;
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
-
-use super::bind::ffi::{get_intersecting_node, Octree, RustVec3, Viewbox};
+use super::bind::ffi::{get_intersecting_node, Octree};
 use cxx::SharedPtr;
 
-#[derive(Deserialize, Clone)]
-pub struct CameraInfo {
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
-    pub size: f64,
-}
-
-impl CameraInfo {
-    fn to_viewbox(&self) -> Viewbox {
-        let box_min = RustVec3::new(
-            self.x - self.size / 2.0,
-            self.y - self.size / 2.0,
-            self.z - self.size / 2.0,
-        );
-        let box_max = RustVec3::new(
-            self.x + self.size / 2.0,
-            self.y + self.size / 2.0,
-            self.z + self.size / 2.0,
-        );
-        Viewbox { box_min, box_max }
-    }
-}
-
-#[derive(Serialize)]
-pub struct LodResult {
-    splines_a: Vec<Vec<f64>>,
-    splines_b: Vec<Vec<f64>>,
-    splines_c: Vec<Vec<f64>>,
-    splines_d: Vec<Vec<f64>>,
-    relevant_densities_flat: Vec<f64>,
-    relevant_coordinates: Vec<Vec<f64>>,
-    client_level_of_detail: HashMap<i64, i64>,
-    min_d: f64,
-    max_d: f64,
-    n_particles: usize,
-}
+use super::dto::{CameraInfo, LodResult};
 
 pub fn calc_lod(
     particle_list_of_leafs: &Array1<i64>,
