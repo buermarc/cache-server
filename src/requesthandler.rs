@@ -71,8 +71,10 @@ pub async fn get_init(
     let regex = Regex::new("snapdir_.*").expect("Failed to generate regex.");
 
     // For the first assume that the groupcat exists and get the box size info
-    let matching_folders = utils::search_folders_matching_regex(basedir, &regex)
-        .expect("Failed to query for snapdirs");
+    let matching_folders = match utils::search_folders_matching_regex(basedir, &regex) {
+        Ok(value) => value,
+        Err(err) => return Err(ErrorInternalServerError(format!("Failed to query for snapdirs: {:?}", err))),
+    };
     if matching_folders.len() == 0 {
         Err(ErrorInternalServerError("No snapdirs found."))
     } else {
