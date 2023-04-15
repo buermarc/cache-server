@@ -63,38 +63,32 @@ impl DataCache {
         }
     }
 
-    pub async fn send_info_about_cache_loading(
+    pub fn send_info_about_cache_loading(
         &self,
         request: &CacheRequest,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        let client = Client::new();
-        Ok(client
-            .post(self.metadata_url.clone() + "/add_snap")
-            .header("User-Agent", self.hostname.clone())
-            .json(request)
-            .send()
-            .await?)
+    ) -> Result<ureq::Response, ureq::Error> {
+        Ok(ureq::post(&(self.metadata_url.clone() + "/add_snap"))
+            .set("User-Agent", &self.hostname)
+            .send_json(request)?)
     }
 
-    pub async fn send_info_about_cache_loading_fail(
+    pub fn send_info_about_cache_loading_fail(
         &self,
         request: &CacheRequest,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        let client = Client::new();
-        Ok(client
-            .post(self.metadata_url.clone() + "/del_snap")
-            .header("User-Agent", self.hostname.clone())
-            .json(request)
-            .send()
-            .await?)
+    ) -> Result<ureq::Response, ureq::Error> {
+        Ok(ureq::post(&(self.metadata_url.clone() + "/del_snap"))
+            .set("User-Agent", &self.hostname)
+            .send_json(request)?)
     }
 
     pub fn load_entry(&mut self, request: &CacheRequest) -> anyhow::Result<Arc<CacheEntry>> {
-        let async_request = request.clone();
+        /*
+        log::info!("Starting async thing.");
         let other: &Self = self;
-        _ = Box::pin(async move {
-            other
-                .send_info_about_cache_loading(&async_request)
+        let async_request = request.clone();
+        actix_web::rt::spawn(async move {
+            log::info!("Within async");
+            other.send_info_about_cache_loading(&async_request)
                 .await
                 .inspect_err(|err| {
                     log::warn!(
@@ -104,6 +98,7 @@ impl DataCache {
                 })
                 .unwrap();
         });
+        */
         let basedir = self.basedir.clone()
             + "/"
             + &request.simulation
@@ -182,19 +177,27 @@ impl Handler<BaseDirRequest> for DataCache {
 impl Handler<CacheRequest> for DataCache {
     type Result = Arc<CacheEntry>;
 
-    fn handle(&mut self, msg: CacheRequest, _ctx: &mut actix::Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: CacheRequest, ctx: &mut actix::Context<Self>) -> Self::Result {
         match self.cache.get(&msg) {
             Some(entry) => entry.clone(),
-            _ => match self.load_entry(&msg) {
-                Ok(result) => return result,
-                Err(err) => {
-                    log::warn!("failed to calculate load_entry {:?}", err);
-                    _ = Box::pin(async move {
-                        self.send_info_about_cache_loading_fail(&msg).await.inspect_err(|err| log::warn!("failed to send info about loading cache to metadata server: {:?}", err)).unwrap();
-                    });
-                    panic!("loading failed.");
+            _ => {
+                self.send_info_about_cache_loading(&msg)
+                    .inspect_err(|err| {
+                        log::warn!(
+                            "failed to send info about loading cache to metadata server: {:?}",
+                            err
+                        )
+                    })
+                    .unwrap();
+                match self.load_entry(&msg) {
+                    Ok(result) => return result,
+                    Err(err) => {
+                        log::warn!("failed to calculate load_entry {:?}", err);
+                        self.send_info_about_cache_loading_fail(&msg).inspect_err(|err| log::warn!("failed to send info about loading cache to metadata server: {:?}", err)).unwrap();
+                        panic!("loading failed.");
+                    }
                 }
-            },
+            }
         }
     }
 }
