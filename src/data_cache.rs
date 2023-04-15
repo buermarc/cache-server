@@ -3,12 +3,16 @@ use rand::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use reqwest::Client;
+
 use cxx::SharedPtr;
 
 use ndarray::{Array1, Array2, Array3};
 use ndarray_npy::read_npy;
 
 use super::bind::ffi::{load_octree_from_file, Octree};
+
+use serde::Serialize;
 
 #[derive(Message)]
 #[rtype(result = "isize")]
@@ -19,16 +23,14 @@ pub struct RandU;
 pub struct BaseDirRequest;
 
 #[derive(Message)]
+#[rtype(result = "Arc<HashMap<String, Vec<usize>>>")]
+pub struct CachedEntriesRequest;
+
+#[derive(Message, Eq, Hash, PartialEq, Serialize)]
 #[rtype(result = "Arc<CacheEntry>")]
 pub struct CacheRequest {
     pub simulation: String,
     pub snapshot_id: usize,
-}
-
-impl CacheRequest {
-    fn as_id(&self) -> String {
-        self.simulation.clone() + &self.snapshot_id.to_string()
-    }
 }
 
 pub struct CacheEntry {
@@ -43,17 +45,32 @@ pub struct CacheEntry {
 
 pub struct DataCache {
     pub rand: isize,
-    pub cache: HashMap<String, Arc<CacheEntry>>,
+    pub cache: HashMap<CacheRequest, Arc<CacheEntry>>,
     pub basedir: String,
+    pub metadata_url: String,
 }
 
 impl DataCache {
-    pub fn new(basedir: String) -> Self {
+    pub fn new(basedir: String, metadata_url: String) -> Self {
         DataCache {
             rand: random(),
             cache: HashMap::new(),
             basedir,
+            metadata_url,
         }
+    }
+
+    pub async fn send_info_about_cache_loading(
+        &self,
+        request: &CacheRequest,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        let client = Client::new();
+        Ok(client
+            .post(self.metadata_url.clone() + "/cache_addition")
+            .header("User-Agent", self.rand)
+            .json(request)
+            .send()
+            .await?)
     }
 
     pub fn load_entry(&mut self, request: CacheRequest) -> Arc<CacheEntry> {
@@ -89,8 +106,25 @@ impl DataCache {
             octree,
         });
 
-        self.cache.insert(request.as_id(), entry.clone());
+        self.cache.insert(request, entry.clone());
         entry
+    }
+
+    pub fn cached_entries(&self) -> HashMap<String, Vec<usize>> {
+        let mut cached_entries = HashMap::new();
+        for key in self.cache.keys() {
+            let simulation = &key.simulation;
+            let snapshot_id = &key.snapshot_id;
+            if !cached_entries.contains_key(simulation) {
+                cached_entries.insert(simulation.clone(), vec![]);
+            }
+
+            let snapshot_ids = cached_entries
+                .get_mut(simulation)
+                .expect("Hashmap should contain vec for simulation as we just inserted it");
+            snapshot_ids.push(*snapshot_id);
+        }
+        cached_entries
     }
 }
 
@@ -118,9 +152,18 @@ impl Handler<CacheRequest> for DataCache {
     type Result = Arc<CacheEntry>;
 
     fn handle(&mut self, msg: CacheRequest, _ctx: &mut Context<Self>) -> Self::Result {
-        match self.cache.get(&msg.as_id()) {
+        match self.cache.get(&msg) {
             Some(entry) => entry.clone(),
             _ => self.load_entry(msg),
         }
+    }
+}
+
+impl Handler<CachedEntriesRequest> for DataCache {
+    type Result = Arc<HashMap<String, Vec<usize>>>;
+
+    fn handle(&mut self, _msg: CachedEntriesRequest, _ctx: &mut Context<Self>) -> Self::Result {
+        let hashmap: HashMap<String, Vec<usize>> = self.cached_entries();
+        return Arc::new(hashmap);
     }
 }

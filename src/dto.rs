@@ -44,6 +44,8 @@ pub struct LodResult {
 #[derive(Serialize, Deserialize)]
 pub struct WebServiceConfig {
     pub basedir: String,
+    pub metadata_url: String,
+    pub port: usize,
 }
 
 #[derive(Deserialize)]

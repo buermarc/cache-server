@@ -124,3 +124,15 @@ pub async fn get_init(
         }
     }
 }
+
+pub async fn get_current_cache(
+    cache: web::Data<Addr<data_cache::DataCache>>,
+) -> Result<impl Responder, Error> {
+    let message = data_cache::CachedEntriesRequest {};
+    if let Ok(json) = cache.send(message).await {
+        let json = &*json;
+        Ok(web::Json(json.clone()))
+    } else {
+        Err(ErrorInternalServerError("Something failed."))
+    }
+}
