@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use super::bind::ffi::{get_intersecting_node, Octree};
 use cxx::SharedPtr;
 
+use anyhow::Context;
+
 use super::dto::{CameraInfo, LodResult};
 
 pub fn calc_lod(
@@ -17,7 +19,7 @@ pub fn calc_lod(
     lod_batch: i64,
     camera_info: &CameraInfo,
     client_level_of_detail: &mut HashMap<i64, i64>,
-) -> LodResult {
+) -> anyhow::Result<LodResult> {
     let node_indicies = get_intersecting_node(octree, camera_info.to_viewbox());
 
     // length of particles in leaf can be determined using the scan
@@ -41,7 +43,7 @@ pub fn calc_lod(
     // Extract relevant particles
     for t in &node_indicies {
         let i = (*t) as usize;
-        let lod = *client_level_of_detail.get(t).unwrap();
+        let lod = *client_level_of_detail.get(t).context("We just inserted all keys. Something is strange")?;
 
         let len = if i != particle_list_of_leafs_scan.len() - 1 {
             particle_list_of_leafs_scan[i + 1] - particle_list_of_leafs_scan[i]
@@ -62,7 +64,7 @@ pub fn calc_lod(
 
     // Increase relevant LODs
     for t in &node_indicies {
-        *client_level_of_detail.get_mut(t).unwrap() += 1;
+        *client_level_of_detail.get_mut(t).context("Key should be contained")? += 1;
     }
 
     let n_particles = relevant_ids.len();
@@ -97,18 +99,18 @@ pub fn calc_lod(
         (
             *relevant_densities_flat
                 .iter()
-                .min_by(|a, b| a.partial_cmp(b).unwrap())
-                .unwrap(),
+                .min_by(|a, b| a.partial_cmp(b).expect("Failed partial cmp."))
+                .expect("Failed min iter."),
             *relevant_densities_flat
                 .iter()
-                .max_by(|a, b| a.partial_cmp(b).unwrap())
-                .unwrap(),
+                .max_by(|a, b| a.partial_cmp(b).expect("Failed partial cmp."))
+                .expect("Failed max iter"),
         )
     } else {
         (0.0, 0.0)
     };
 
-    LodResult {
+    Ok(LodResult {
         splines_a,
         splines_b,
         splines_c,
@@ -119,7 +121,7 @@ pub fn calc_lod(
         min_d,
         max_d,
         n_particles,
-    }
+    })
 }
 
 #[cfg(test)]

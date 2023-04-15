@@ -46,9 +46,12 @@ pub async fn get_snapshot(
             &client_state.camera_info.clone(),
             &mut client_state.level_of_detail,
         );
-        Ok(web::Json(lod_result))
+        match lod_result {
+            Ok(lod_result) => Ok(web::Json(lod_result)),
+            Err(err) => Err(ErrorInternalServerError(format!("Failed to calculate lod result: {:?}", err))),
+        }
     } else {
-        Err(ErrorInternalServerError("Something failed."))
+        Err(ErrorInternalServerError("Communication with data cache failed."))
     }
 }
 
@@ -122,7 +125,7 @@ pub async fn get_init(
             };
             Ok(web::Json(init_response))
         } else {
-            Err(ErrorInternalServerError("Something failed."))
+            Err(ErrorInternalServerError("Communication with data cache failed."))
         }
     }
 }
