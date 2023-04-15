@@ -1,3 +1,5 @@
+#![feature(result_option_inspect)]
+
 use actix::*;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use expanduser::expanduser;
@@ -49,7 +51,11 @@ async fn main() -> std::io::Result<()> {
     let cfg: dto::WebServiceConfig =
         confy::load_path("cfg.yml").expect("Failed to load config from disk");
 
-    let cache = data_cache::DataCache::new(cfg.basedir, cfg.metadata_url.clone());
+    let cache = data_cache::DataCache::new(
+        cfg.basedir,
+        cfg.metadata_url.clone(),
+        format!("http://localhost:{}", cfg.port),
+    );
     actix_rt::spawn(ping_metadata_server_coroutine(cfg.metadata_url, cfg.port));
     let cache = cache.start();
 
@@ -73,7 +79,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
     })
     .workers(2)
-    .bind(("127.0.0.1", 8000))?
+    .bind(("127.0.0.1", cfg.port as u16))?
     .run()
     .await
 }

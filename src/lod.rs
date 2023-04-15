@@ -43,7 +43,9 @@ pub fn calc_lod(
     // Extract relevant particles
     for t in &node_indicies {
         let i = (*t) as usize;
-        let lod = *client_level_of_detail.get(t).context("We just inserted all keys. Something is strange")?;
+        let lod = *client_level_of_detail
+            .get(t)
+            .context("We just inserted all keys. Something is strange")?;
 
         let len = if i != particle_list_of_leafs_scan.len() - 1 {
             particle_list_of_leafs_scan[i + 1] - particle_list_of_leafs_scan[i]
@@ -64,7 +66,9 @@ pub fn calc_lod(
 
     // Increase relevant LODs
     for t in &node_indicies {
-        *client_level_of_detail.get_mut(t).context("Key should be contained")? += 1;
+        *client_level_of_detail
+            .get_mut(t)
+            .context("Key should be contained")? += 1;
     }
 
     let n_particles = relevant_ids.len();

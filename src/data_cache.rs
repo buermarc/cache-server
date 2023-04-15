@@ -12,6 +12,7 @@ use ndarray_npy::read_npy;
 
 use super::bind::ffi::{load_octree_from_file, Octree};
 
+use anyhow::Context;
 use serde::Serialize;
 
 #[derive(Message)]
@@ -23,10 +24,10 @@ pub struct RandU;
 pub struct BaseDirRequest;
 
 #[derive(Message)]
-#[rtype(result = "Arc<HashMap<String, Vec<usize>>>")]
+#[rtype(result = "Arc<anyhow::Result<HashMap<String, Vec<usize>>>>")]
 pub struct CachedEntriesRequest;
 
-#[derive(Message, Eq, Hash, PartialEq, Serialize)]
+#[derive(Message, Eq, Hash, PartialEq, Serialize, Clone)]
 #[rtype(result = "Arc<CacheEntry>")]
 pub struct CacheRequest {
     pub simulation: String,
@@ -48,15 +49,17 @@ pub struct DataCache {
     pub cache: HashMap<CacheRequest, Arc<CacheEntry>>,
     pub basedir: String,
     pub metadata_url: String,
+    pub hostname: String,
 }
 
 impl DataCache {
-    pub fn new(basedir: String, metadata_url: String) -> Self {
+    pub fn new(basedir: String, metadata_url: String, hostname: String) -> Self {
         DataCache {
             rand: random(),
             cache: HashMap::new(),
             basedir,
             metadata_url,
+            hostname,
         }
     }
 
@@ -66,14 +69,41 @@ impl DataCache {
     ) -> Result<reqwest::Response, reqwest::Error> {
         let client = Client::new();
         Ok(client
-            .post(self.metadata_url.clone() + "/cache_addition")
-            .header("User-Agent", self.rand)
+            .post(self.metadata_url.clone() + "/add_snap")
+            .header("User-Agent", self.hostname.clone())
             .json(request)
             .send()
             .await?)
     }
 
-    pub fn load_entry(&mut self, request: CacheRequest) -> Arc<CacheEntry> {
+    pub async fn send_info_about_cache_loading_fail(
+        &self,
+        request: &CacheRequest,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        let client = Client::new();
+        Ok(client
+            .post(self.metadata_url.clone() + "/del_snap")
+            .header("User-Agent", self.hostname.clone())
+            .json(request)
+            .send()
+            .await?)
+    }
+
+    pub fn load_entry(&mut self, request: &CacheRequest) -> anyhow::Result<Arc<CacheEntry>> {
+        let async_request = request.clone();
+        let other: &Self = self;
+        _ = Box::pin(async move {
+            other
+                .send_info_about_cache_loading(&async_request)
+                .await
+                .inspect_err(|err| {
+                    log::warn!(
+                        "failed to send info about loading cache to metadata server: {:?}",
+                        err
+                    )
+                })
+                .unwrap();
+        });
         let basedir = self.basedir.clone()
             + "/"
             + &request.simulation
@@ -82,17 +112,18 @@ impl DataCache {
             + "/";
 
         let particle_list_of_leafs = read_npy(basedir.clone() + "particle_list_of_leafs.npy")
-            .expect("Failed to open particle_list_of_leafs");
+            .context("Failed to open particle_list_of_leafs")?;
         let particle_list_of_leafs_scan =
             read_npy(basedir.clone() + "particle_list_of_leafs_scan.npy")
-                .expect("Failed to open particle_list_of_leafs_scan");
-        let splines = read_npy(basedir.clone() + "splines.npy").expect("Failed to open splines");
+                .context("Failed to open particle_list_of_leafs_scan")?;
+        let splines =
+            read_npy(basedir.clone() + "splines.npy").context("Failed to open splines")?;
         let densities: Array2<f64> =
-            read_npy(basedir.clone() + "Density.npy").expect("Failed to open Density");
+            read_npy(basedir.clone() + "Density.npy").context("Failed to open Density")?;
         let quantiles: Array1<f64> = read_npy(basedir.clone() + "densities_quantiles.npy")
-            .expect("Failed to open density_quantiles");
+            .context("Failed to open density_quantiles")?;
         let coordinates =
-            read_npy(basedir.clone() + "Coordinates.npy").expect("Failed to open Coordinates");
+            read_npy(basedir.clone() + "Coordinates.npy").context("Failed to open Coordinates")?;
 
         let octree = load_octree_from_file(basedir.clone() + "o3dOctree.json");
 
@@ -106,11 +137,11 @@ impl DataCache {
             octree,
         });
 
-        self.cache.insert(request, entry.clone());
-        entry
+        self.cache.insert(request.clone(), entry.clone());
+        Ok(entry)
     }
 
-    pub fn cached_entries(&self) -> HashMap<String, Vec<usize>> {
+    pub fn cached_entries(&self) -> anyhow::Result<HashMap<String, Vec<usize>>> {
         let mut cached_entries = HashMap::new();
         for key in self.cache.keys() {
             let simulation = &key.simulation;
@@ -121,21 +152,21 @@ impl DataCache {
 
             let snapshot_ids = cached_entries
                 .get_mut(simulation)
-                .expect("Hashmap should contain vec for simulation as we just inserted it");
+                .context("Hashmap should contain vec for simulation as we just inserted it")?;
             snapshot_ids.push(*snapshot_id);
         }
-        cached_entries
+        Ok(cached_entries)
     }
 }
 
 impl Actor for DataCache {
-    type Context = Context<Self>;
+    type Context = actix::Context<Self>;
 }
 
 impl Handler<RandU> for DataCache {
     type Result = isize;
 
-    fn handle(&mut self, _msg: RandU, _ctx: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, _msg: RandU, _ctx: &mut actix::Context<Self>) -> Self::Result {
         self.rand
     }
 }
@@ -143,7 +174,7 @@ impl Handler<RandU> for DataCache {
 impl Handler<BaseDirRequest> for DataCache {
     type Result = String;
 
-    fn handle(&mut self, _msg: BaseDirRequest, _ctx: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, _msg: BaseDirRequest, _ctx: &mut actix::Context<Self>) -> Self::Result {
         self.basedir.clone()
     }
 }
@@ -151,19 +182,32 @@ impl Handler<BaseDirRequest> for DataCache {
 impl Handler<CacheRequest> for DataCache {
     type Result = Arc<CacheEntry>;
 
-    fn handle(&mut self, msg: CacheRequest, _ctx: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: CacheRequest, _ctx: &mut actix::Context<Self>) -> Self::Result {
         match self.cache.get(&msg) {
             Some(entry) => entry.clone(),
-            _ => self.load_entry(msg),
+            _ => match self.load_entry(&msg) {
+                Ok(result) => return result,
+                Err(err) => {
+                    log::warn!("failed to calculate load_entry {:?}", err);
+                    _ = Box::pin(async move {
+                        self.send_info_about_cache_loading_fail(&msg).await.inspect_err(|err| log::warn!("failed to send info about loading cache to metadata server: {:?}", err)).unwrap();
+                    });
+                    panic!("loading failed.");
+                }
+            },
         }
     }
 }
 
 impl Handler<CachedEntriesRequest> for DataCache {
-    type Result = Arc<HashMap<String, Vec<usize>>>;
+    type Result = Arc<anyhow::Result<HashMap<String, Vec<usize>>>>;
 
-    fn handle(&mut self, _msg: CachedEntriesRequest, _ctx: &mut Context<Self>) -> Self::Result {
-        let hashmap: HashMap<String, Vec<usize>> = self.cached_entries();
+    fn handle(
+        &mut self,
+        _msg: CachedEntriesRequest,
+        _ctx: &mut actix::Context<Self>,
+    ) -> Self::Result {
+        let hashmap: anyhow::Result<HashMap<String, Vec<usize>>> = self.cached_entries();
         return Arc::new(hashmap);
     }
 }

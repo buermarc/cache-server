@@ -13,6 +13,7 @@ use regex::Regex;
 use hdf5::File;
 
 use super::{data_cache, dto, lod, utils};
+use anyhow::{anyhow, Context};
 
 pub async fn get_rand_init(cache: web::Data<Addr<data_cache::DataCache>>) -> Result<String, Error> {
     sleep_until(Instant::now() + Duration::from_secs(0)).await;
@@ -48,10 +49,15 @@ pub async fn get_snapshot(
         );
         match lod_result {
             Ok(lod_result) => Ok(web::Json(lod_result)),
-            Err(err) => Err(ErrorInternalServerError(format!("Failed to calculate lod result: {:?}", err))),
+            Err(err) => Err(ErrorInternalServerError(format!(
+                "Failed to calculate lod result: {:?}",
+                err
+            ))),
         }
     } else {
-        Err(ErrorInternalServerError("Communication with data cache failed."))
+        Err(ErrorInternalServerError(
+            "Communication with data cache failed.",
+        ))
     }
 }
 
@@ -59,6 +65,18 @@ pub async fn get_init(
     params: web::Path<(String, usize)>,
     cache: web::Data<Addr<data_cache::DataCache>>,
 ) -> Result<impl Responder, Error> {
+    match _get_init(params, cache).await {
+        Ok(result) => Ok(result),
+        Err(err) => Err(ErrorInternalServerError(format!(
+            "Failed to calculate lod result: {:?}",
+            err
+        ))),
+    }
+}
+pub async fn _get_init(
+    params: web::Path<(String, usize)>,
+    cache: web::Data<Addr<data_cache::DataCache>>,
+) -> anyhow::Result<web::Json<dto::InitResponse>> {
     let (simulation, snapshot_id) = (params.0.clone(), params.1);
     let message = data_cache::CacheRequest {
         simulation: simulation.to_string(),
@@ -69,17 +87,15 @@ pub async fn get_init(
     let base = cache
         .send(data_cache::BaseDirRequest {})
         .await
-        .expect("Failed to get configured basedir.");
+        .context("Failed to get configured basedir.")?;
     let basedir = base.clone() + "/" + &simulation + "/";
-    let regex = Regex::new("snapdir_.*").expect("Failed to generate regex.");
+    let regex = Regex::new("snapdir_.*").context("Failed to generate regex.")?;
 
     // For the first assume that the groupcat exists and get the box size info
-    let matching_folders = match utils::search_folders_matching_regex(basedir, &regex) {
-        Ok(value) => value,
-        Err(err) => return Err(ErrorInternalServerError(format!("Failed to query for snapdirs: {:?}", err))),
-    };
+    let matching_folders = utils::search_folders_matching_regex(basedir, &regex)
+        .context("Failed to query for snapdirs")?;
     if matching_folders.len() == 0 {
-        Err(ErrorInternalServerError("No snapdirs found."))
+        Err(anyhow!("No snapdirs found."))
     } else {
         let all_possible_snaps: Vec<usize> = matching_folders
             .iter()
@@ -88,7 +104,7 @@ pub async fn get_init(
                 usize::from_str(
                     &folder
                         .file_name()
-                        .unwrap()
+                        .expect("Failed to get filename.")
                         .to_string_lossy()
                         .replace("snapdir_", ""),
                 )
@@ -97,7 +113,7 @@ pub async fn get_init(
             .collect();
         let snap_id = all_possible_snaps
             .first()
-            .expect("Could not get first snap_id.");
+            .context("Could not get first snap_id.")?;
         let groupcat = base.clone()
             + "/"
             + &simulation
@@ -106,14 +122,16 @@ pub async fn get_init(
             + "/"
             + &format!("fof_subhalo_tab_{:03}.0.hdf5", snap_id);
 
-        let file = File::open(groupcat).expect("Failed to open groupcat");
-        let header = file.group("Header").expect("Failed to access header group");
+        let file = File::open(groupcat).context("Failed to open groupcat")?;
+        let header = file
+            .group("Header")
+            .context("Failed to access header group")?;
         let attribute = header
             .attr("BoxSize")
-            .expect("Failed to access box size attribute.");
+            .context("Failed to access box size attribute.")?;
         let box_size = attribute
             .read_scalar::<usize>()
-            .expect("Failed te read scalar.");
+            .context("Failed te read scalar.")?;
 
         if let Ok(cache_entry) = cache.send(message).await {
             let cache_entry = &*cache_entry;
@@ -125,7 +143,7 @@ pub async fn get_init(
             };
             Ok(web::Json(init_response))
         } else {
-            Err(ErrorInternalServerError("Communication with data cache failed."))
+            Err(anyhow!("Communication with data cache failed."))
         }
     }
 }
@@ -135,9 +153,16 @@ pub async fn get_current_cache(
 ) -> Result<impl Responder, Error> {
     let message = data_cache::CachedEntriesRequest {};
     if let Ok(json) = cache.send(message).await {
-        let json = &*json;
-        Ok(web::Json(json.clone()))
+        match &*json {
+            Ok(json) => Ok(web::Json(json.clone())),
+            Err(err) => Err(ErrorInternalServerError(format!(
+                "Failed to get the current cache: {:?}",
+                err
+            ))),
+        }
     } else {
-        Err(ErrorInternalServerError("Something failed."))
+        Err(ErrorInternalServerError(
+            "Communication with data cache failed.",
+        ))
     }
 }
