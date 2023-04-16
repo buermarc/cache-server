@@ -17,10 +17,12 @@ pub fn calc_lod(
     coordinates: &Array2<f64>,
     octree: SharedPtr<Octree>,
     lod_batch: i64,
-    camera_info: &CameraInfo,
+    camera_information: &CameraInfo,
     client_level_of_detail: &mut HashMap<i64, i64>,
+    snapshot_id: usize,
 ) -> anyhow::Result<LodResult> {
-    let node_indicies = get_intersecting_node(octree, camera_info.to_viewbox());
+    let node_indices = get_intersecting_node(octree, camera_information.to_viewbox());
+    println!("node_indices: {:?}", node_indices);
 
     // length of particles in leaf can be determined using the scan
     // data = [1,2,3, 4,5,6,8, 9,10,11]
@@ -32,7 +34,7 @@ pub fn calc_lod(
 
     // Go over the new idx
     // if not contained within client add them with a zero
-    for idx in &node_indicies {
+    for idx in &node_indices {
         if !client_level_of_detail.contains_key(idx) {
             client_level_of_detail.insert(*idx, 0);
         }
@@ -41,7 +43,7 @@ pub fn calc_lod(
     let mut relevant_ids: Vec<i64> = vec![];
 
     // Extract relevant particles
-    for t in &node_indicies {
+    for t in &node_indices {
         let i = (*t) as usize;
         let lod = *client_level_of_detail
             .get(t)
@@ -65,7 +67,7 @@ pub fn calc_lod(
     }
 
     // Increase relevant LODs
-    for t in &node_indicies {
+    for t in &node_indices {
         *client_level_of_detail
             .get_mut(t)
             .context("Key should be contained")? += 1;
@@ -75,10 +77,10 @@ pub fn calc_lod(
 
     // Allocate result arrays
     // TODO unsure what is better, zero initialized and [] or with_capacity and push
-    let mut splines_a: Vec<Vec<f64>> = vec![vec![]; n_particles];
-    let mut splines_b: Vec<Vec<f64>> = vec![vec![]; n_particles];
-    let mut splines_c: Vec<Vec<f64>> = vec![vec![]; n_particles];
-    let mut splines_d: Vec<Vec<f64>> = vec![vec![]; n_particles];
+    let mut splines_a: Vec<f64> = vec![0.; 3 * n_particles];
+    let mut splines_b: Vec<f64> = vec![0.; 3 * n_particles];
+    let mut splines_c: Vec<f64> = vec![0.; 3 * n_particles];
+    let mut splines_d: Vec<f64> = vec![0.; 3 * n_particles];
 
     // Ugly with two vectors, but do not know a real better way
     let mut relevant_densities_flat: Vec<f64> = vec![0.0; n_particles * 2];
@@ -88,10 +90,22 @@ pub fn calc_lod(
 
     // Extract relevant data and copy into result arrays
     for (idx, id) in relevant_ids.into_iter().enumerate() {
-        splines_a[idx] = splines.slice(s![id as usize, 0, ..]).to_vec();
-        splines_b[idx] = splines.slice(s![id as usize, 1, ..]).to_vec();
-        splines_c[idx] = splines.slice(s![id as usize, 2, ..]).to_vec();
-        splines_d[idx] = splines.slice(s![id as usize, 3, ..]).to_vec();
+        splines_a.splice(
+            idx * 3..(idx + 1) * 3,
+            splines.slice(s![id as usize, 0, ..]).to_vec(),
+        );
+        splines_b.splice(
+            idx * 3..(idx + 1) * 3,
+            splines.slice(s![id as usize, 1, ..]).to_vec(),
+        );
+        splines_c.splice(
+            idx * 3..(idx + 1) * 3,
+            splines.slice(s![id as usize, 2, ..]).to_vec(),
+        );
+        splines_d.splice(
+            idx * 3..(idx + 1) * 3,
+            splines.slice(s![id as usize, 3, ..]).to_vec(),
+        );
 
         relevant_densities_flat[idx] = densities[[0, id as usize]];
         relevant_densities_flat[idx + n_particles] = densities[[1, id as usize]];
@@ -114,6 +128,8 @@ pub fn calc_lod(
         (0.0, 0.0)
     };
 
+    let node_indices = client_level_of_detail.keys().copied().collect();
+
     Ok(LodResult {
         splines_a,
         splines_b,
@@ -125,6 +141,8 @@ pub fn calc_lod(
         min_d,
         max_d,
         n_particles,
+        snapshot_id,
+        node_indices,
     })
 }
 
@@ -176,7 +194,7 @@ mod tests {
 
         let octree = load_octree_from_file(basedir + file_name);
 
-        let camera_info = CameraInfo {
+        let camera_information = CameraInfo {
             x: 1.0,
             y: 2.0,
             z: 3.0,
@@ -190,7 +208,7 @@ mod tests {
             &coordinates,
             octree.clone(),
             lod_batch,
-            &camera_info,
+            &camera_information,
             &mut client_level_of_detail,
         );
 

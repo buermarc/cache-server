@@ -1,6 +1,7 @@
 #![feature(result_option_inspect)]
 
 use actix::*;
+use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use expanduser::expanduser;
 
@@ -24,16 +25,17 @@ impl ::std::default::Default for dto::WebServiceConfig {
                 .to_string(),
             metadata_url: "http://localhost:9999".to_string(),
             port: 8000,
+            cache_server_url: "http://localhost:8000".to_string(),
         }
     }
 }
 
-async fn ping_metadata_server_coroutine(metadata_url: String, port: usize) {
+async fn ping_metadata_server_coroutine(metadata_url: String, cache_server_url: String) {
     loop {
         let client = Client::new();
         match client
             .post(metadata_url.clone() + "/ping")
-            .header("User-Agent", format!("http://127.0.0.1:{}", port))
+            .header("User-Agent", &cache_server_url)
             .send()
             .await
         {
@@ -41,6 +43,16 @@ async fn ping_metadata_server_coroutine(metadata_url: String, port: usize) {
             Err(err) => log::warn!("Failed to send ping to metadata server {:?}", err),
         }
         sleep(Duration::from_secs(30)).await;
+    }
+}
+
+fn goodbye_metadata_server(metadata_url: String, hostname: String) {
+    match ureq::post(&(metadata_url.clone() + "/goodbye"))
+        .set("User-Agent", &hostname)
+        .call()
+    {
+        Ok(_) => log::info!("Send goodbye to metadata server."),
+        Err(err) => log::warn!("Failed to send goodbye to metadata server {:?}", err),
     }
 }
 
@@ -54,13 +66,17 @@ async fn main() -> std::io::Result<()> {
     let cache = data_cache::DataCache::new(
         cfg.basedir,
         cfg.metadata_url.clone(),
-        format!("http://localhost:{}", cfg.port),
+        cfg.cache_server_url.clone(),
     );
-    actix_rt::spawn(ping_metadata_server_coroutine(cfg.metadata_url, cfg.port));
+    let handle = actix_rt::spawn(ping_metadata_server_coroutine(
+        cfg.metadata_url.clone(),
+        cfg.cache_server_url.clone(),
+    ));
     let cache = cache.start();
 
     log::info!("starting HTTP server at http://localhost:8000");
-    HttpServer::new(move || {
+    let res = HttpServer::new(move || {
+        let cors = Cors::permissive();
         App::new()
             .app_data(web::Data::new(cache.clone()))
             .route("/rand", web::get().to(requesthandler::get_rand_init))
@@ -77,9 +93,13 @@ async fn main() -> std::io::Result<()> {
                 web::get().to(requesthandler::get_current_cache),
             )
             .wrap(Logger::default())
+            .wrap(cors)
     })
     .workers(2)
     .bind(("127.0.0.1", cfg.port as u16))?
     .run()
-    .await
+    .await;
+    handle.abort();
+    goodbye_metadata_server(cfg.metadata_url, cfg.cache_server_url);
+    res
 }

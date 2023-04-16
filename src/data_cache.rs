@@ -3,8 +3,6 @@ use rand::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use reqwest::Client;
-
 use cxx::SharedPtr;
 
 use ndarray::{Array1, Array2, Array3};

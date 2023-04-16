@@ -44,8 +44,9 @@ pub async fn get_snapshot(
             &cache_entry.coordinates,
             cache_entry.octree.clone(),
             client_state.batch_size_lod,
-            &client_state.camera_info.clone(),
+            &client_state.camera_information.clone(),
             &mut client_state.level_of_detail,
+            snapshot_id,
         );
         match lod_result {
             Ok(lod_result) => Ok(web::Json(lod_result)),
