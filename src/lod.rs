@@ -22,7 +22,6 @@ pub fn calc_lod(
     snapshot_id: usize,
 ) -> anyhow::Result<LodResult> {
     let node_indices = get_intersecting_node(octree, camera_information.to_viewbox());
-    println!("node_indices: {:?}", node_indices);
 
     // length of particles in leaf can be determined using the scan
     // data = [1,2,3, 4,5,6,8, 9,10,11]
