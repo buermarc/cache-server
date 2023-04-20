@@ -3,7 +3,7 @@ fn main() {
         .file("src/rust_octree_bind.cpp")
         .file("src/Octree.cpp")
         .flag("-ljsoncpp")
-        .compile("cache_server");
+        .compile("cache-server");
 
     println!("cargo:rustc-link-lib=jsoncpp");
 }

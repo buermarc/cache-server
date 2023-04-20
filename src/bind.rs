@@ -14,13 +14,13 @@ pub mod ffi {
 
     #[namespace = "open3d::geometry"]
     unsafe extern "C++" {
-        include!("cache_server/include/Octree.h");
+        include!("cache-server/include/Octree.h");
 
         type Octree;
     }
 
     unsafe extern "C++" {
-        include!("cache_server/include/rust_octree_bind.h");
+        include!("cache-server/include/rust_octree_bind.h");
 
         fn load_octree_from_file(file_name: String) -> SharedPtr<Octree>;
         fn get_intersecting_node(octree: SharedPtr<Octree>, viewbox: Viewbox) -> Vec<i64>;

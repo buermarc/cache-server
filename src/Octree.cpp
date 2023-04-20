@@ -5,14 +5,14 @@
 // SPDX-License-Identifier: MIT
 // ----------------------------------------------------------------------------
 
-#include "cache_server/include/Octree.h"
+#include "cache-server/include/Octree.h"
 
 #include <jsoncpp/json/json.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 
-#include "cache_server/include/eigen/Eigen/Dense"
+#include "cache-server/include/eigen/Eigen/Dense"
 #include <algorithm>
 #include <unordered_map>
 

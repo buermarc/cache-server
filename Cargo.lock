@@ -462,7 +462,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cache_server"
+name = "cache-server"
 version = "0.1.0"
 dependencies = [
  "actix",

@@ -1,7 +1,7 @@
 #include <memory>
 
-#include "cache_server/include/Octree.h"
-#include "cache_server/include/rust_octree_bind.h"
+#include "cache-server/include/Octree.h"
+#include "cache-server/include/rust_octree_bind.h"
 #include <algorithm>
 #include <iostream>
 

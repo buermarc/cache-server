@@ -1,8 +1,8 @@
 #pragma once
 #include <memory>
 
-#include "cache_server/include/Octree.h"
-#include "cache_server/src/bind.rs.h"
+#include "cache-server/include/Octree.h"
+#include "cache-server/src/bind.rs.h"
 #include "rust/cxx.h"
 
 using namespace open3d::geometry;
