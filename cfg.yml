@@ -1,0 +1,5 @@
+---
+basedir: /data/tng
+metadata_url: "http://localhost:9999"
+port: 8000
+cache_server_url: "http://localhost:8000"
