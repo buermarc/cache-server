@@ -39,6 +39,7 @@ pub struct CacheEntry {
     pub densities: Array2<f64>,
     pub quantiles: Array1<f64>,
     pub coordinates: Array2<f64>,
+    pub voronoi_diameter_extended: Array1<f64>,
     pub octree: SharedPtr<Octree>,
 }
 
@@ -117,6 +118,8 @@ impl DataCache {
             .context("Failed to open density_quantiles")?;
         let coordinates =
             read_npy(basedir.clone() + "Coordinates.npy").context("Failed to open Coordinates")?;
+        let voronoi_diameter_extended = read_npy(basedir.clone() + "voronoi_diameter_extended.npy")
+            .context("Failed to open voronoi_diameter_extended")?;
 
         let octree = load_octree_from_file(basedir.clone() + "o3dOctree.json");
 
@@ -127,6 +130,7 @@ impl DataCache {
             densities,
             quantiles,
             coordinates,
+            voronoi_diameter_extended,
             octree,
         });
 
@@ -175,7 +179,7 @@ impl Handler<BaseDirRequest> for DataCache {
 impl Handler<CacheRequest> for DataCache {
     type Result = Arc<CacheEntry>;
 
-    fn handle(&mut self, msg: CacheRequest, ctx: &mut actix::Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: CacheRequest, _ctx: &mut actix::Context<Self>) -> Self::Result {
         match self.cache.get(&msg) {
             Some(entry) => entry.clone(),
             _ => {

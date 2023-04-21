@@ -37,6 +37,8 @@ pub struct LodResult {
     pub relevant_densities_flat: Vec<f64>,
     #[serde(rename = "coordinates")]
     pub relevant_coordinates: Vec<Vec<f64>>,
+    #[serde(rename = "voronoi_diameter_extended")]
+    pub relevant_voronoi_diameter_extended: Vec<f64>,
     #[serde(rename = "level_of_detail")]
     pub client_level_of_detail: HashMap<i64, i64>,
     #[serde(rename = "min_density")]

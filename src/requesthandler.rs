@@ -42,6 +42,7 @@ pub async fn get_snapshot(
             &cache_entry.splines,
             &cache_entry.densities,
             &cache_entry.coordinates,
+            &cache_entry.voronoi_diameter_extended,
             cache_entry.octree.clone(),
             client_state.batch_size_lod,
             &client_state.camera_information.clone(),

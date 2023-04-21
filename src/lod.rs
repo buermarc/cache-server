@@ -15,6 +15,7 @@ pub fn calc_lod(
     splines: &Array3<f64>,
     densities: &Array2<f64>,
     coordinates: &Array2<f64>,
+    voronoi_diameter_extended: &Array1<f64>,
     octree: SharedPtr<Octree>,
     lod_batch: i64,
     camera_information: &CameraInfo,
@@ -86,6 +87,7 @@ pub fn calc_lod(
 
     // let mut relevant_coordinates: Vec<Vec<f64>> = repeat_with(|| Vec::with_capacity(3)).take(n_particles).collect();
     let mut relevant_coordinates: Vec<Vec<f64>> = vec![vec![]; n_particles];
+    let mut relevant_voronoi_diameter_extended: Vec<f64> = vec![0.0; n_particles];
 
     // Extract relevant data and copy into result arrays
     for (idx, id) in relevant_ids.into_iter().enumerate() {
@@ -110,6 +112,7 @@ pub fn calc_lod(
         relevant_densities_flat[idx + n_particles] = densities[[1, id as usize]];
 
         relevant_coordinates[idx] = coordinates.slice(s![id as usize, ..]).to_vec();
+        relevant_voronoi_diameter_extended[idx] = voronoi_diameter_extended[[id as usize]];
     }
 
     let (min_d, max_d) = if n_particles > 0 {
@@ -136,6 +139,7 @@ pub fn calc_lod(
         splines_d,
         relevant_densities_flat,
         relevant_coordinates,
+        relevant_voronoi_diameter_extended,
         client_level_of_detail: client_level_of_detail.to_owned(),
         min_d,
         max_d,
