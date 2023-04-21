@@ -9,4 +9,4 @@ ADD . .
 RUN make  # download eigen depenency
 RUN cargo build --release
 
-CMD cargo run --relase
+CMD cargo run --release
