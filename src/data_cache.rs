@@ -26,7 +26,7 @@ pub struct BaseDirRequest;
 pub struct CachedEntriesRequest;
 
 #[derive(Message, Eq, Hash, PartialEq, Serialize, Clone)]
-#[rtype(result = "Arc<CacheEntry>")]
+#[rtype(result = "anyhow::Result<Arc<CacheEntry>>")]
 pub struct CacheRequest {
     pub simulation: String,
     pub snapshot_id: usize,
@@ -105,10 +105,11 @@ impl DataCache {
             + &format!("snapdir_{:03}", request.snapshot_id)
             + "/";
 
-        let particle_list_of_leafs = read_npy(basedir.clone() + "particle_list_of_leafs.npy")
-            .context("Failed to open particle_list_of_leafs")?;
+        let particle_list_of_leafs =
+            read_npy(basedir.clone() + "particle_list_of_leafs_Density.npy")
+                .context("Failed to open particle_list_of_leafs")?;
         let particle_list_of_leafs_scan =
-            read_npy(basedir.clone() + "particle_list_of_leafs_scan.npy")
+            read_npy(basedir.clone() + "particle_list_of_leafs_Density_scan.npy")
                 .context("Failed to open particle_list_of_leafs_scan")?;
         let splines =
             read_npy(basedir.clone() + "splines.npy").context("Failed to open splines")?;
@@ -177,11 +178,11 @@ impl Handler<BaseDirRequest> for DataCache {
 }
 
 impl Handler<CacheRequest> for DataCache {
-    type Result = Arc<CacheEntry>;
+    type Result = anyhow::Result<Arc<CacheEntry>>;
 
     fn handle(&mut self, msg: CacheRequest, _ctx: &mut actix::Context<Self>) -> Self::Result {
         match self.cache.get(&msg) {
-            Some(entry) => entry.clone(),
+            Some(entry) => Ok(entry.clone()),
             _ => {
                 self.send_info_about_cache_loading(&msg)
                     .inspect_err(|err| {
@@ -192,11 +193,11 @@ impl Handler<CacheRequest> for DataCache {
                     })
                     .unwrap();
                 match self.load_entry(&msg) {
-                    Ok(result) => return result,
+                    Ok(result) => return Ok(result),
                     Err(err) => {
                         log::warn!("failed to calculate load_entry {:?}", err);
                         self.send_info_about_cache_loading_fail(&msg).inspect_err(|err| log::warn!("failed to send info about loading cache to metadata server: {:?}", err)).unwrap();
-                        panic!("loading failed.");
+                        Err(err)
                     }
                 }
             }

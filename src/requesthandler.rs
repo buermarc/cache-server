@@ -34,32 +34,40 @@ pub async fn get_snapshot(
         simulation: simulation.to_string(),
         snapshot_id,
     };
-    if let Ok(cache_entry) = cache.send(message).await {
-        let cache_entry = &*cache_entry;
-        let lod_result = lod::calc_lod(
-            &cache_entry.particle_list_of_leafs,
-            &cache_entry.particle_list_of_leafs_scan,
-            &cache_entry.splines,
-            &cache_entry.densities,
-            &cache_entry.coordinates,
-            &cache_entry.voronoi_diameter_extended,
-            cache_entry.octree.clone(),
-            client_state.batch_size_lod,
-            &client_state.camera_information.clone(),
-            &mut client_state.level_of_detail,
-            snapshot_id,
-        );
-        match lod_result {
-            Ok(lod_result) => Ok(web::Json(lod_result)),
+    match cache.send(message).await {
+        Ok(cache_entry) => match cache_entry {
+            Ok(cache_entry) => {
+                let cache_entry = &*cache_entry;
+                let lod_result = lod::calc_lod(
+                    &cache_entry.particle_list_of_leafs,
+                    &cache_entry.particle_list_of_leafs_scan,
+                    &cache_entry.splines,
+                    &cache_entry.densities,
+                    &cache_entry.coordinates,
+                    &cache_entry.voronoi_diameter_extended,
+                    cache_entry.octree.clone(),
+                    client_state.batch_size_lod,
+                    &client_state.camera_information.clone(),
+                    &mut client_state.level_of_detail,
+                    snapshot_id,
+                );
+                match lod_result {
+                    Ok(lod_result) => Ok(web::Json(lod_result)),
+                    Err(err) => Err(ErrorInternalServerError(format!(
+                        "Failed to calculate lod result: {:?}",
+                        err
+                    ))),
+                }
+            }
             Err(err) => Err(ErrorInternalServerError(format!(
-                "Failed to calculate lod result: {:?}",
+                "Data loading failed. {:?}",
                 err
             ))),
-        }
-    } else {
-        Err(ErrorInternalServerError(
-            "Communication with data cache failed.",
-        ))
+        },
+        Err(err) => Err(ErrorInternalServerError(format!(
+            "Communication with data cache failed. {:?}",
+            err
+        ))),
     }
 }
 
@@ -135,17 +143,21 @@ pub async fn _get_init(
             .read_scalar::<usize>()
             .context("Failed te read scalar.")?;
 
-        if let Ok(cache_entry) = cache.send(message).await {
-            let cache_entry = &*cache_entry;
-            let init_response = dto::InitResponse {
-                all_possible_snaps,
-                box_size,
-                quantiles: cache_entry.quantiles.to_vec(),
-                n_quantiles: cache_entry.quantiles.len(),
-            };
-            Ok(web::Json(init_response))
-        } else {
-            Err(anyhow!("Communication with data cache failed."))
+        match cache.send(message).await {
+            Ok(cache_entry) => match cache_entry {
+                Ok(cache_entry) => {
+                    let cache_entry = &*cache_entry;
+                    let init_response = dto::InitResponse {
+                        all_possible_snaps,
+                        box_size,
+                        quantiles: cache_entry.quantiles.to_vec(),
+                        n_quantiles: cache_entry.quantiles.len(),
+                    };
+                    Ok(web::Json(init_response))
+                }
+                Err(err) => Err(anyhow!("Data loading failed: {:?}.", err)),
+            },
+            Err(err) => Err(anyhow!("Communication with data cache failed: {:?}.", err)),
         }
     }
 }
