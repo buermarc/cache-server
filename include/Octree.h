@@ -11,7 +11,7 @@
 #include <memory>
 #include <vector>
 
-#include <jsoncpp/json/json.h>
+#include <json/json.h>
 #include "eigen/Eigen/Dense"
 
 namespace open3d {
